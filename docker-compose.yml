@@ -6,7 +6,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "3090:3090"
+      - "3090:5173"
     depends_on:
       - backend
     environment:
