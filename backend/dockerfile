@@ -1,18 +1,16 @@
-FROM node:18-alpine
+FROM node:18
 
 WORKDIR /app
 
-# Change this line
 COPY package*.json ./
 
 RUN npm install
 
-# Change this line
-COPY . ./
+# Install the MySQL client
+RUN apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*
 
-RUN ls -la /app
+COPY . ./
 
 EXPOSE 3091
 
 CMD ["npm", "run", "start"]
-
