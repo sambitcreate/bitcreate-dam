@@ -1,0 +1,17 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Change this line
+COPY package*.json ./
+
+RUN npm install
+
+# Change this line
+COPY . ./
+
+RUN npm run build
+
+EXPOSE 3090
+
+CMD ["npm", "run", "dev", "--", "--host"]

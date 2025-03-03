@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3090:3090"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:3091
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3091:3091"
+    depends_on:
+      - db
+      - minio
+    environment:
+      - DB_HOST=db
+      - DB_USER=damuser
+      - DB_PASSWORD=dampassword
+      - DB_NAME=jewelrydam
+      - MINIO_ENDPOINT=minio
+      - MINIO_ACCESS_KEY=miniouser
+      - MINIO_SECRET_KEY=miniopassword
+
+  db:
+    image: mysql:8
+    environment:
+      - MYSQL_DATABASE=jewelrydam
+      - MYSQL_USER=damuser
+      - MYSQL_PASSWORD=dampassword
+      - MYSQL_ROOT_PASSWORD=rootpassword
+    volumes:
+      - db_data:/var/lib/mysql
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=miniouser
+      - MINIO_ROOT_PASSWORD=miniopassword
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+volumes:
+  db_data:
+  minio_data:
+
