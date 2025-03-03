@@ -1,62 +1,56 @@
-import React from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
-import { MantineProvider, AppShell, Text } from '@mantine/core';
-import type { MantineThemeOverride } from '@mantine/core';
+import { MantineProvider, AppShell, Text, Box, Group, Navbar, Header } from '@mantine/core';
 
-import Dashboard from './pages/Dashboard';
-import Assets from './pages/Assets';
-import Transfers from './pages/Transfers';
+// Simple placeholder components for our routes
+const Dashboard = () => <div>Dashboard Page</div>;
+const Assets = () => <div>Assets Page</div>;
+const Transfers = () => <div>Transfers Page</div>;
 
-// Define the theme
-const theme: MantineThemeOverride = {
-  components: {
-    AppShell: {
-      styles: {
-        main: {
-          backgroundColor: 'var(--mantine-color-gray-0)',
-          '@media (prefers-color-scheme: dark)': {
-            backgroundColor: 'var(--mantine-color-dark-8)',
-          },
-        },
-      },
-    },
-  },
+// Navigation component that uses Link
+const Navigation = () => {
+  return (
+    <Box>
+      <Text weight={500} size="lg" mb="md">Navigation</Text>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <Box component={Link} to="/" sx={{ textDecoration: 'none', padding: '8px' }}>
+          Dashboard
+        </Box>
+        <Box component={Link} to="/assets" sx={{ textDecoration: 'none', padding: '8px' }}>
+          Assets
+        </Box>
+        <Box component={Link} to="/transfers" sx={{ textDecoration: 'none', padding: '8px' }}>
+          Transfers
+        </Box>
+      </Box>
+    </Box>
+  );
 };
 
-const App: React.FC = () => {
+// Main App component
+const App = () => {
   return (
-    <MantineProvider
-      withCssVariables
-      defaultColorScheme="light"
-      theme={theme}
-    >
+    <MantineProvider withGlobalStyles withNormalizeCSS>
       <AppShell
         padding="md"
-        navbar={{ width: 300, breakpoint: 'sm' }}
-        header={{ height: 60 }}
+        navbar={
+          <Navbar width={{ base: 300 }}>
+            <Navigation />
+          </Navbar>
+        }
+        header={
+          <Header height={60}>
+            <Group p="md">
+              <Text weight={700} size="xl">Jewelry DAM</Text>
+            </Group>
+          </Header>
+        }
       >
-        <AppShell.Navbar p="md">
-          <Text fw={500} size="lg">
-            Navigation
-          </Text>
-          <Link to="/">Dashboard</Link>
-          <Link to="/assets">Assets</Link>
-          <Link to="/transfers">Transfers</Link>
-        </AppShell.Navbar>
-
-        <AppShell.Header p="md">
-          <Text fw={700} size="xl">
-            Jewelry DAM
-          </Text>
-        </AppShell.Header>
-
-        <AppShell.Main>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/assets" element={<Assets />} />
-            <Route path="/transfers" element={<Transfers />} />
-          </Routes>
-        </AppShell.Main>
+        {/* In Mantine v6, AppShell.Main doesn't exist, content goes directly inside AppShell */}
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/assets" element={<Assets />} />
+          <Route path="/transfers" element={<Transfers />} />
+        </Routes>
       </AppShell>
     </MantineProvider>
   );

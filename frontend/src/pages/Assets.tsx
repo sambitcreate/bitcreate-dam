@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Table,
   Button,
@@ -8,11 +8,10 @@ import {
   Textarea,
   FileInput,
   Badge,
-  Box,
 } from '@mantine/core';
 import axios from 'axios';
 
-const Assets: React.FC = () => {
+const Assets = () => {
   const [assets, setAssets] = useState([]);
   const [opened, setOpened] = useState(false);
   const [newAssetName, setNewAssetName] = useState('');
@@ -45,15 +44,11 @@ const Assets: React.FC = () => {
         formData.append('tiff', newAssetTiff as File);
       }
 
-      const response = await axios.post(
-        'http://localhost:3091/api/assets',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
+      const response = await axios.post('http://localhost:3091/api/assets', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
 
       if (response.status === 201) {
         fetchAssets();
@@ -72,8 +67,8 @@ const Assets: React.FC = () => {
   };
 
   return (
-    <Box p="md">
-      <Group justify="space-between" mb="md">
+    <div>
+      <Group position="apart" mb="md">
         <TextInput
           placeholder="Search assets..."
           onChange={() => {
@@ -83,87 +78,69 @@ const Assets: React.FC = () => {
         <Button onClick={() => setOpened(true)}>Create New Asset</Button>
       </Group>
 
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Tags</Table.Th>
-            <Table.Th>Created</Table.Th>
-            <Table.Th>Actions</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+      <Table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Tags</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
           {assets.map((asset: any) => (
-            <Table.Tr key={asset.id}>
-              <Table.Td>{asset.name}</Table.Td>
-              <Table.Td>
-                <Group gap="xs">
-                  {asset.tags &&
-                    JSON.parse(asset.tags).map((tag: string) => (
-                      <Badge key={tag}>{tag}</Badge>
-                    ))}
+            <tr key={asset.id}>
+              <td>{asset.name}</td>
+              <td>
+                <Group spacing="xs">
+                  {asset.tags && JSON.parse(asset.tags).map((tag: string) => (
+                    <Badge key={tag}>{tag}</Badge>
+                  ))}
                 </Group>
-              </Table.Td>
-              <Table.Td>{new Date(asset.created_at).toLocaleString()}</Table.Td>
-              <Table.Td>
+              </td>
+              <td>{new Date(asset.created_at).toLocaleString()}</td>
+              <td>
                 <Button onClick={() => {/* Handle action */}}>
                   Send via WeTransfer
                 </Button>
-              </Table.Td>
-            </Table.Tr>
+              </td>
+            </tr>
           ))}
-        </Table.Tbody>
+        </tbody>
       </Table>
 
-      <Modal
-        opened={opened}
-        onClose={() => setOpened(false)}
-        title="Create New Asset"
-      >
-        <Box component="form" maw={400} mx="auto">
-          <TextInput
-            label="Name"
-            placeholder="Asset Name"
-            value={newAssetName}
-            onChange={(event) => setNewAssetName(event.currentTarget.value)}
-            mb="md"
-          />
-          <Textarea
-            label="Description"
-            placeholder="Asset Description"
-            value={newAssetDescription}
-            onChange={(event) =>
-              setNewAssetDescription(event.currentTarget.value)
-            }
-            mb="md"
-          />
-          <TextInput
-            label="Tags"
-            placeholder="Comma-separated tags"
-            value={newAssetTags}
-            onChange={(event) => setNewAssetTags(event.currentTarget.value)}
-            mb="md"
-          />
-          <FileInput
-            label="JPG File"
-            accept="image/jpeg"
-            onChange={setNewAssetJpg}
-            value={newAssetJpg}
-            mb="md"
-          />
-          <FileInput
-            label="TIFF File (Optional)"
-            accept="image/tiff"
-            onChange={setNewAssetTiff}
-            value={newAssetTiff}
-            mb="md"
-          />
-          <Button onClick={handleCreateAsset} fullWidth>
-            Create Asset
-          </Button>
-        </Box>
+      <Modal opened={opened} onClose={() => setOpened(false)} title="Create New Asset">
+        <TextInput
+          label="Name"
+          placeholder="Asset Name"
+          value={newAssetName}
+          onChange={(event) => setNewAssetName(event.currentTarget.value)}
+        />
+        <Textarea
+          label="Description"
+          placeholder="Asset Description"
+          value={newAssetDescription}
+          onChange={(event) => setNewAssetDescription(event.currentTarget.value)}
+        />
+        <TextInput
+          label="Tags"
+          placeholder="Comma-separated tags"
+          value={newAssetTags}
+          onChange={(event) => setNewAssetTags(event.currentTarget.value)}
+        />
+        <FileInput
+          label="JPG File"
+          accept="image/jpeg"
+          onChange={(file) => setNewAssetJpg(file)}
+        />
+        <FileInput
+          label="TIFF File (Optional)"
+          accept="image/tiff"
+          onChange={(file) => setNewAssetTiff(file)}
+        />
+        <Button onClick={handleCreateAsset}>Create Asset</Button>
       </Modal>
-    </Box>
+    </div>
   );
 };
 
