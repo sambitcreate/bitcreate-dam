@@ -18,10 +18,11 @@ app.use(express.json());
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'db', // Use the service name as hostname
+  host: process.env.DB_HOST || 'localhost', // Changed from 'db' to 'localhost'
   user: process.env.DB_USER || 'damuser',
   password: process.env.DB_PASSWORD || 'dampassword',
   database: process.env.DB_NAME || 'jewelrydam',
+  port: parseInt(process.env.DB_PORT || '3306'),
 };
 
 const pool = mysql.createPool(dbConfig);
@@ -30,6 +31,14 @@ const pool = mysql.createPool(dbConfig);
 async function testConnection(retries = 5) {
   for (let i = 0; i < retries; i++) {
     try {
+      console.log(`Attempting database connection (attempt ${i + 1}/${retries})...`);
+      console.log('Using database config:', {
+        host: dbConfig.host,
+        user: dbConfig.user,
+        database: dbConfig.database,
+        port: dbConfig.port
+      });
+
       const connection = await pool.getConnection();
       console.log('Database connected successfully');
 
@@ -40,8 +49,7 @@ async function testConnection(retries = 5) {
           message TEXT NOT NULL,
           timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           asset_id VARCHAR(36),
-          status VARCHAR(50),
-          FOREIGN KEY (asset_id) REFERENCES assets(id)
+          status VARCHAR(50)
         )
       `);
       console.log('Upload logs table created or verified');
@@ -73,14 +81,33 @@ async function testConnection(retries = 5) {
       `);
       console.log('Clients table created or verified');
 
+      // Create projects table
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS projects (
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL UNIQUE,
+          description TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('Projects table created or verified');
+
       connection.release(); // Release the connection back to the pool
       return; // Exit the function if the connection is successful
     } catch (error) {
       console.error('Error connecting to the database:', error);
+      console.error('Connection details:', {
+        host: dbConfig.host,
+        user: dbConfig.user,
+        database: dbConfig.database,
+        port: dbConfig.port
+      });
+      
       if (i < retries - 1) {
-        console.log('Retrying connection...');
+        console.log(`Retrying connection in 2 seconds... (${retries - i - 1} attempts remaining)`);
         await new Promise(res => setTimeout(res, 2000)); // Wait 2 seconds before retrying
       } else {
+        console.error('All connection attempts failed');
         throw error; // Rethrow the error if all retries fail
       }
     }
@@ -109,21 +136,66 @@ const upload = multer({ storage: storage });
 
 // MinIO client
 const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT || 'minio',
+  endPoint: process.env.MINIO_ENDPOINT || 'localhost',
   port: 9000,
   useSSL: false,
-  accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-  secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+  accessKey: process.env.MINIO_ACCESS_KEY || 'miniouser',
+  secretKey: process.env.MINIO_SECRET_KEY || 'miniopassword',
 });
+
+// Initialize MinIO bucket
+async function initializeMinio() {
+  try {
+    const bucketName = 'jewelrydam';
+    const bucketExists = await minioClient.bucketExists(bucketName);
+    if (!bucketExists) {
+      await minioClient.makeBucket(bucketName);
+      console.log('Created MinIO bucket:', bucketName);
+    } else {
+      console.log('MinIO bucket already exists:', bucketName);
+    }
+  } catch (error) {
+    console.error('Error initializing MinIO:', error);
+    throw error;
+  }
+}
 
 // API Endpoints
 app.get('/api/assets', async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM assets');
+    // First check if the table exists
+    const [tables] = await pool.execute(`
+      SELECT TABLE_NAME 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'assets'
+    `, [dbConfig.database]);
+
+    if (!Array.isArray(tables) || tables.length === 0) {
+      console.error('Assets table does not exist');
+      return res.status(500).json({ 
+        error: 'Database not properly initialized',
+        details: 'Assets table is missing'
+      });
+    }
+
+    // Use a simpler query without joins for now
+    const [rows] = await pool.execute('SELECT * FROM assets ORDER BY created_at DESC');
+    
+    if (!Array.isArray(rows)) {
+      console.error('Unexpected response format:', rows);
+      return res.status(500).json({ 
+        error: 'Unexpected database response',
+        details: 'Query did not return an array'
+      });
+    }
+
     res.json(rows);
   } catch (error) {
     console.error('Error fetching assets:', error);
-    res.status(500).json({ error: 'Failed to fetch assets' });
+    res.status(500).json({ 
+      error: 'Failed to fetch assets',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 
@@ -145,11 +217,31 @@ interface UploadResult {
 
 app.post('/api/assets', upload.array('images'), async (req, res) => {
   try {
-    const { projectName, projectDate, clientId } = req.body;
+    const { projectName, projectDate, clientName } = req.body;
     const files = req.files as Express.Multer.File[];
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'At least one image file is required' });
+    }
+
+    // Get project ID if project name is provided
+    let projectId: string | null = null;
+    if (projectName) {
+      const [projects] = await pool.execute<any[]>(
+        'SELECT id FROM projects WHERE name = ?',
+        [projectName]
+      );
+
+      if (Array.isArray(projects) && projects.length > 0) {
+        projectId = projects[0].id;
+      } else {
+        // Create a new project if it doesn't exist
+        projectId = uuidv4();
+        await pool.execute(
+          'INSERT INTO projects (id, name) VALUES (?, ?)',
+          [projectId, projectName]
+        );
+      }
     }
 
     const results: UploadResult[] = [];
@@ -179,15 +271,24 @@ app.post('/api/assets', upload.array('images'), async (req, res) => {
 
         // Insert asset metadata into the database
         const query = `
-          INSERT INTO assets (id, name, project_name, project_date, client_name, jpg_url)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO assets (
+            id, 
+            name, 
+            project_id,
+            project_name,
+            project_date,
+            client_name,
+            jpg_url
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         await pool.execute(query, [
           assetId,
           file.originalname,
+          projectId,
           projectName,
           projectDate,
-          clientId,
+          clientName,
           jpgUrl
         ]);
 
@@ -277,6 +378,121 @@ app.get('/api/assets/search', async (req, res) => {
   }
 });
 
+app.get('/api/assets/recent', async (req, res) => {
+  try {
+    // First check if the table exists
+    const [tables] = await pool.execute(`
+      SELECT TABLE_NAME 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'assets'
+    `, [dbConfig.database]);
+
+    if (!Array.isArray(tables) || tables.length === 0) {
+      console.error('Assets table does not exist');
+      return res.status(500).json({ 
+        error: 'Database not properly initialized',
+        details: 'Assets table is missing'
+      });
+    }
+
+    // Use a simpler query without joins for now
+    const [rows] = await pool.execute('SELECT * FROM assets ORDER BY created_at DESC LIMIT 10');
+    
+    if (!Array.isArray(rows)) {
+      console.error('Unexpected response format:', rows);
+      return res.status(500).json({ 
+        error: 'Unexpected database response',
+        details: 'Query did not return an array'
+      });
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching recent assets:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch recent assets',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Add projects endpoints
+app.get('/api/projects', async (req, res) => {
+  try {
+    // First check if the table exists
+    const [tables] = await pool.execute(`
+      SELECT TABLE_NAME 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'projects'
+    `, [dbConfig.database]);
+
+    if (!Array.isArray(tables) || tables.length === 0) {
+      console.error('Projects table does not exist');
+      return res.status(500).json({ 
+        error: 'Database not properly initialized',
+        details: 'Projects table is missing'
+      });
+    }
+
+    // Use a simpler query for now
+    const [rows] = await pool.execute('SELECT * FROM projects ORDER BY created_at DESC');
+    
+    if (!Array.isArray(rows)) {
+      console.error('Unexpected response format:', rows);
+      return res.status(500).json({ 
+        error: 'Unexpected database response',
+        details: 'Query did not return an array'
+      });
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch projects',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/projects', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Project name is required' });
+    }
+
+    // Check for duplicate project name
+    const [existing] = await pool.execute(
+      'SELECT id FROM projects WHERE name = ?',
+      [name]
+    );
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      return res.status(400).json({ error: 'A project with this name already exists' });
+    }
+
+    const projectId = uuidv4();
+    await pool.execute(
+      'INSERT INTO projects (id, name, description) VALUES (?, ?, ?)',
+      [projectId, name, description || null]
+    );
+
+    res.status(201).json({
+      id: projectId,
+      name,
+      description,
+      created_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(500).json({ 
+      error: 'Failed to create project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Start the application
 async function startApp() {
   try {
@@ -284,13 +500,14 @@ async function startApp() {
     console.log('Environment variables:', process.env);
 
     await testConnection(); // Test the database connection
+    await initializeMinio(); // Initialize MinIO bucket
 
     app.listen(port, () => {
       console.log(`Backend running on port ${port}`);
     });
   } catch (error) {
-    console.error('Failed to connect to the database. Exiting...', error);
-    process.exit(1); // Exit the process if the connection fails
+    console.error('Failed to initialize application:', error);
+    process.exit(1);
   }
 }
 

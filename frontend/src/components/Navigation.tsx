@@ -1,6 +1,6 @@
 import { NavLink } from '@mantine/core';
-import { IconHome, IconPhoto, IconFolder } from '@tabler/icons-react';
 import { Link, useLocation } from 'react-router-dom';
+import { IconHome, IconPhoto, IconFolder } from '@tabler/icons-react';
 
 export function Navigation() {
   const location = useLocation();
