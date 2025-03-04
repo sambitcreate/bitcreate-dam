@@ -3,18 +3,28 @@ import {
   Table,
   Button,
   TextInput,
-  Group,
-  Modal,
   Textarea,
   FileInput,
   Badge,
   Text,
+  Container,
+  Box,
+  Title,
+  Modal,
 } from '@mantine/core';
 import axios from 'axios';
 
+interface Asset {
+  id: number;
+  name: string;
+  description: string;
+  tags: string;
+  created_at: string;
+}
+
 const Assets: React.FC = () => {
-  const [assets, setAssets] = useState<any[]>([]);
-  const [filteredAssets, setFilteredAssets] = useState<any[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [filteredAssets, setFilteredAssets] = useState<Asset[]>([]);
   const [opened, setOpened] = useState(false);
   const [newAssetName, setNewAssetName] = useState('');
   const [newAssetDescription, setNewAssetDescription] = useState('');
@@ -34,7 +44,7 @@ const Assets: React.FC = () => {
 
   const fetchAssets = async () => {
     try {
-      const response = await axios.get('http://localhost:3091/api/assets');
+      const response = await axios.get<Asset[]>('http://localhost:3091/api/assets');
       setAssets(response.data);
       setFilteredAssets(response.data);
     } catch (error) {
@@ -50,7 +60,8 @@ const Assets: React.FC = () => {
     setFilteredAssets(filtered);
   };
 
-  const handleCreateAsset = async () => {
+  const handleCreateAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!newAssetName || !newAssetDescription || !newAssetJpg) {
       setError('Name, description, and JPG file are required.');
       return;
@@ -61,9 +72,9 @@ const Assets: React.FC = () => {
       formData.append('name', newAssetName);
       formData.append('description', newAssetDescription);
       formData.append('tags', newAssetTags);
-      formData.append('jpg', newAssetJpg as File);
+      formData.append('jpg', newAssetJpg);
       if (newAssetTiff) {
-        formData.append('tiff', newAssetTiff as File);
+        formData.append('tiff', newAssetTiff);
       }
 
       const response = await axios.post('http://localhost:3091/api/assets', formData, {
@@ -91,19 +102,21 @@ const Assets: React.FC = () => {
   };
 
   return (
-    <div>
-      <Group position="apart" mb="md">
-        <TextInput
-          placeholder="Search assets..."
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.currentTarget.value)}
-          style={{ flex: 1 }}
-        />
-        <Button onClick={() => setOpened(true)}>Create New Asset</Button>
-      </Group>
+    <Container>
+      <Box style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <Title order={2}>Assets</Title>
+        <Button onClick={() => setOpened(true)}>Add New</Button>
+      </Box>
+
+      <TextInput
+        placeholder="Search assets..."
+        value={searchQuery}
+        onChange={(event) => setSearchQuery(event.currentTarget.value)}
+        style={{ flex: 1, marginBottom: '1rem' }}
+      />
 
       {error && (
-        <Text color="red" mb="md">
+        <Text c="red" mb="md">
           {error}
         </Text>
       )}
@@ -122,14 +135,14 @@ const Assets: React.FC = () => {
             <tr key={asset.id}>
               <td>{asset.name}</td>
               <td>
-                <Group spacing="sm">
+                <Box style={{ display: 'flex', gap: '0.5rem' }}>
                   {asset.tags &&
                     JSON.parse(asset.tags).map((tag: string) => (
                       <Badge key={tag} color="blue">
                         {tag}
                       </Badge>
                     ))}
-                </Group>
+                </Box>
               </td>
               <td>{new Date(asset.created_at).toLocaleString()}</td>
               <td>
@@ -143,47 +156,44 @@ const Assets: React.FC = () => {
       </Table>
 
       <Modal opened={opened} onClose={() => setOpened(false)} title="Create New Asset">
-        <TextInput
-          label="Name"
-          placeholder="Asset Name"
-          value={newAssetName}
-          onChange={(event) => setNewAssetName(event.currentTarget.value)}
-          required
-          mb="md"
-        />
-        <Textarea
-          label="Description"
-          placeholder="Asset Description"
-          value={newAssetDescription}
-          onChange={(event) => setNewAssetDescription(event.currentTarget.value)}
-          required
-          mb="md"
-        />
-        <TextInput
-          label="Tags"
-          placeholder="Comma-separated tags"
-          value={newAssetTags}
-          onChange={(event) => setNewAssetTags(event.currentTarget.value)}
-          mb="md"
-        />
-        <FileInput
-          label="JPG File"
-          accept="image/jpeg"
-          onChange={(file) => setNewAssetJpg(file)}
-          required
-          mb="md"
-        />
-        <FileInput
-          label="TIFF File (Optional)"
-          accept="image/tiff"
-          onChange={(file) => setNewAssetTiff(file)}
-          mb="md"
-        />
-        <Button onClick={handleCreateAsset} fullWidth>
-          Create Asset
-        </Button>
+        <form onSubmit={handleCreateAsset}>
+          <Box style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <TextInput
+              label="Name"
+              placeholder="Asset name"
+              value={newAssetName}
+              onChange={(event) => setNewAssetName(event.currentTarget.value)}
+              required
+            />
+            <Textarea
+              label="Description"
+              placeholder="Asset Description"
+              value={newAssetDescription}
+              onChange={(event) => setNewAssetDescription(event.currentTarget.value)}
+              required
+            />
+            <TextInput
+              label="Tags"
+              placeholder="Comma-separated tags"
+              value={newAssetTags}
+              onChange={(event) => setNewAssetTags(event.currentTarget.value)}
+            />
+            <FileInput
+              label="JPG File"
+              accept="image/jpeg"
+              onChange={(file) => setNewAssetJpg(file)}
+              required
+            />
+            <FileInput
+              label="TIFF File (Optional)"
+              accept="image/tiff"
+              onChange={(file) => setNewAssetTiff(file)}
+            />
+            <Button type="submit">Create</Button>
+          </Box>
+        </form>
       </Modal>
-    </div>
+    </Container>
   );
 };
 

@@ -1,96 +1,82 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { MantineProvider, AppShell, Text, Box, Group, Navbar, Header } from '@mantine/core';
+import React, { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Navigation from './components/Navigation';
+import Assets from './Assets';
+import Dashboard from './pages/Dashboard';
+import { MantineProvider, createTheme, AppShell } from '@mantine/core';
+import '@mantine/core/styles.css';
 
-// Simple placeholder components for our routes
-const Dashboard = () => <Text>Dashboard Page</Text>;
-const Assets = () => <Text>Assets Page</Text>;
-const Transfers = () => <Text>Transfers Page</Text>;
+const theme = createTheme({
+  primaryColor: 'blue',
+  defaultRadius: 'sm',
+});
 
-// Navigation component that uses Link
-const Navigation = () => {
-  const location = useLocation();
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
-  // Helper function to check if a link is active
-  const isActive = (path: string) => location.pathname === path;
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+          <h1>Something went wrong.</h1>
+          <p>{this.state.error?.message}</p>
+          <button onClick={() => window.location.reload()}>Reload Page</button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const App: React.FC = () => {
+  const [mobileOpened, setMobileOpened] = useState(false);
 
   return (
-    <Box>
-      <Text weight={500} size="lg" mb="md">
-        Navigation
-      </Text>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <Box
-          component={Link}
-          to="/"
-          sx={{
-            textDecoration: 'none',
-            padding: '8px',
-            backgroundColor: isActive('/') ? '#e0e0e0' : 'transparent',
-            borderRadius: '4px',
-            '&:hover': { backgroundColor: '#f0f0f0' },
-          }}
-        >
-          Dashboard
-        </Box>
-        <Box
-          component={Link}
-          to="/assets"
-          sx={{
-            textDecoration: 'none',
-            padding: '8px',
-            backgroundColor: isActive('/assets') ? '#e0e0e0' : 'transparent',
-            borderRadius: '4px',
-            '&:hover': { backgroundColor: '#f0f0f0' },
-          }}
-        >
-          Assets
-        </Box>
-        <Box
-          component={Link}
-          to="/transfers"
-          sx={{
-            textDecoration: 'none',
-            padding: '8px',
-            backgroundColor: isActive('/transfers') ? '#e0e0e0' : 'transparent',
-            borderRadius: '4px',
-            '&:hover': { backgroundColor: '#f0f0f0' },
-          }}
-        >
-          Transfers
-        </Box>
-      </Box>
-    </Box>
-  );
-};
+    <ErrorBoundary>
+      <MantineProvider theme={theme}>
+        <Router>
+          <AppShell
+            header={{ height: 60 }}
+            navbar={{
+              width: 300,
+              breakpoint: 'sm',
+              collapsed: { mobile: !mobileOpened },
+            }}
+            padding="md"
+          >
+            <AppShell.Header p="md">
+              <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Jewelry DAM</h1>
+              </div>
+            </AppShell.Header>
 
-// Main App component
-const App = () => {
-  return (
-    <MantineProvider withGlobalStyles withNormalizeCSS>
-      <AppShell
-        padding="md"
-        navbar={
-          <Navbar width={{ base: 300 }} p="md">
-            <Navigation />
-          </Navbar>
-        }
-        header={
-          <Header height={60} p="md">
-            <Group>
-              <Text weight={700} size="xl">
-                Jewelry DAM
-              </Text>
-            </Group>
-          </Header>
-        }
-      >
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/assets" element={<Assets />} />
-          <Route path="/transfers" element={<Transfers />} />
-        </Routes>
-      </AppShell>
-    </MantineProvider>
+            <Navigation mobileOpened={mobileOpened} onMobileOpenedChange={setMobileOpened} />
+
+            <AppShell.Main>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/assets" element={<Assets />} />
+              </Routes>
+            </AppShell.Main>
+          </AppShell>
+        </Router>
+      </MantineProvider>
+    </ErrorBoundary>
   );
 };
 

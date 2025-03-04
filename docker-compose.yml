@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3090:5173"
-    depends_on:
-      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:3091
+    depends_on:
+      - backend
     networks:
       - app-network
 
@@ -29,7 +32,10 @@ services:
       MINIO_ENDPOINT: minio
       MINIO_ACCESS_KEY: miniouser
       MINIO_SECRET_KEY: miniopassword
-    command: ["sh", "-c", "sleep 3600"]  # Keep the container running for debugging
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run start
     networks:
       - app-network
 
@@ -58,9 +64,9 @@ services:
     environment:
       MINIO_ROOT_USER: miniouser
       MINIO_ROOT_PASSWORD: miniopassword
+    command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-    command: server /data --console-address ":9001"
     networks:
       - app-network
 

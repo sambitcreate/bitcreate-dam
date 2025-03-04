@@ -2,16 +2,17 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Change this line
+# Copy package files
 COPY package*.json ./
 
+# Install dependencies
 RUN npm install
 
-# Change this line
-COPY . ./
+# Copy the rest of the application
+COPY . .
 
-RUN npm run build
+# Expose the port
+EXPOSE 5173
 
-EXPOSE 3090
-
-CMD ["npm", "run", "dev", "--", "--host"]
+# Start the development server with the correct host setting
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
