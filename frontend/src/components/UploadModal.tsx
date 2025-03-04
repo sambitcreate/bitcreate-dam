@@ -99,9 +99,16 @@ export function UploadModal({ opened, onClose, onUpload, projectId }: UploadModa
       title="Upload Assets"
       size="xl"
       styles={{
-        root: { zIndex: 1000 },
-        overlay: { zIndex: 999 }
+        root: { zIndex: 9999 },
+        overlay: { zIndex: 9998, backdropFilter: 'blur(3px)' },
+        content: { position: 'relative' },
+        inner: { padding: '20px' },
+        header: { zIndex: 10000 }
       }}
+      centered
+      fullScreen={false}
+      overlayProps={{ blur: 3 }}
+      transitionProps={{ duration: 200 }}
     >
       <Stack>
         <FileInput
@@ -114,14 +121,16 @@ export function UploadModal({ opened, onClose, onUpload, projectId }: UploadModa
           
         <Box>
           <Text size="sm" fw={500} mb={4}>Project Date *</Text>
-          <DatePicker
-            selected={projectDate}
-            onChange={handleDateChange}
-            dateFormat="MMMM d, yyyy"
-            className="mantine-input"
-            wrapperClassName="mantine-datepicker-wrapper"
-            required
-          />
+          <div style={{ position: 'relative', zIndex: 10001 }}>
+            <DatePicker
+              selected={projectDate}
+              onChange={handleDateChange}
+              dateFormat="MMMM d, yyyy"
+              className="mantine-input"
+              wrapperClassName="mantine-datepicker-wrapper"
+              required
+            />
+          </div>
         </Box>
 
         <Box>

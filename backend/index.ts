@@ -60,6 +60,7 @@ async function testConnection(retries = 5) {
           id VARCHAR(36) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
+          project_id VARCHAR(36),
           project_name VARCHAR(255),
           project_date DATE,
           client_name VARCHAR(255),
@@ -81,16 +82,31 @@ async function testConnection(retries = 5) {
       `);
       console.log('Clients table created or verified');
 
-      // Create projects table
+      // Create or update projects table
       await connection.execute(`
         CREATE TABLE IF NOT EXISTS projects (
           id VARCHAR(36) PRIMARY KEY,
           name VARCHAR(255) NOT NULL UNIQUE,
           description TEXT,
+          project_date DATE,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
       console.log('Projects table created or verified');
+
+      // Check if project_date column exists in projects table
+      try {
+        await connection.execute(`
+          SELECT project_date FROM projects LIMIT 1
+        `);
+        console.log('project_date column already exists in projects table');
+      } catch (error) {
+        console.log('Adding project_date column to projects table');
+        await connection.execute(`
+          ALTER TABLE projects ADD COLUMN project_date DATE
+        `);
+        console.log('project_date column added to projects table');
+      }
 
       connection.release(); // Release the connection back to the pool
       return; // Exit the function if the connection is successful
@@ -457,7 +473,7 @@ app.get('/api/projects', async (req, res) => {
 
 app.post('/api/projects', async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, project_date } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'Project name is required' });
     }
@@ -474,20 +490,256 @@ app.post('/api/projects', async (req, res) => {
 
     const projectId = uuidv4();
     await pool.execute(
-      'INSERT INTO projects (id, name, description) VALUES (?, ?, ?)',
-      [projectId, name, description || null]
+      'INSERT INTO projects (id, name, description, project_date) VALUES (?, ?, ?, ?)',
+      [projectId, name, description || null, project_date || null]
     );
 
     res.status(201).json({
       id: projectId,
       name,
       description,
+      project_date,
       created_at: new Date().toISOString()
     });
   } catch (error) {
     console.error('Error creating project:', error);
     res.status(500).json({ 
       error: 'Failed to create project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Add endpoint to update a project
+app.put('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, project_date } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Project name is required' });
+    }
+
+    // Check if project exists
+    const [existing] = await pool.execute(
+      'SELECT id FROM projects WHERE id = ?',
+      [id]
+    );
+
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // Check for duplicate name (excluding current project)
+    const [duplicates] = await pool.execute(
+      'SELECT id FROM projects WHERE name = ? AND id != ?',
+      [name, id]
+    );
+
+    if (Array.isArray(duplicates) && duplicates.length > 0) {
+      return res.status(400).json({ error: 'A project with this name already exists' });
+    }
+
+    await pool.execute(
+      'UPDATE projects SET name = ?, description = ?, project_date = ? WHERE id = ?',
+      [name, description || null, project_date || null, id]
+    );
+
+    res.json({
+      id,
+      name,
+      description,
+      project_date,
+      updated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({ 
+      error: 'Failed to update project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Add endpoint to delete a project
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Start a transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // Get all assets associated with this project
+      const [assets] = await connection.execute<mysql.RowDataPacket[]>(
+        'SELECT id FROM assets WHERE project_id = ?',
+        [id]
+      );
+      
+      // Delete assets from MinIO
+      if (Array.isArray(assets) && assets.length > 0) {
+        for (const asset of assets) {
+          try {
+            await minioClient.removeObject('jewelrydam', `assets/${asset.id}.jpg`);
+          } catch (error) {
+            console.error(`Error removing asset ${asset.id} from MinIO:`, error);
+            // Continue with deletion even if MinIO removal fails
+          }
+        }
+        
+        // Delete assets from database
+        await connection.execute(
+          'DELETE FROM assets WHERE project_id = ?',
+          [id]
+        );
+      }
+      
+      // Delete the project
+      const [result] = await connection.execute(
+        'DELETE FROM projects WHERE id = ?',
+        [id]
+      );
+      
+      await connection.commit();
+      
+      // Check if any rows were affected
+      const deleteResult = result as { affectedRows: number };
+      if (deleteResult.affectedRows === 0) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+      
+      res.json({ message: 'Project deleted successfully' });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete project',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Add endpoint to delete an asset
+app.delete('/api/assets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Start a transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // Delete asset from MinIO
+      try {
+        await minioClient.removeObject('jewelrydam', `assets/${id}.jpg`);
+      } catch (error) {
+        console.error(`Error removing asset ${id} from MinIO:`, error);
+        // Continue with deletion even if MinIO removal fails
+      }
+      
+      // Delete asset from database
+      const [result] = await connection.execute(
+        'DELETE FROM assets WHERE id = ?',
+        [id]
+      );
+      
+      await connection.commit();
+      
+      // Check if any rows were affected
+      const deleteResult = result as { affectedRows: number };
+      if (deleteResult.affectedRows === 0) {
+        return res.status(404).json({ error: 'Asset not found' });
+      }
+      
+      res.json({ message: 'Asset deleted successfully' });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error deleting asset:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete asset',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Add endpoint to update asset metadata
+app.put('/api/assets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, 
+      description, 
+      project_name, 
+      project_id,
+      project_date, 
+      client_name, 
+      tags 
+    } = req.body;
+
+    // Validate required fields
+    if (!name) {
+      return res.status(400).json({ error: 'Asset name is required' });
+    }
+
+    // Check if asset exists
+    const [existing] = await pool.execute(
+      'SELECT id FROM assets WHERE id = ?',
+      [id]
+    );
+
+    if (!Array.isArray(existing) || existing.length === 0) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    // Update asset metadata
+    await pool.execute(
+      `UPDATE assets 
+       SET name = ?, 
+           description = ?, 
+           project_name = ?, 
+           project_id = ?,
+           project_date = ?, 
+           client_name = ?, 
+           tags = ? 
+       WHERE id = ?`,
+      [
+        name,
+        description || null,
+        project_name || null,
+        project_id || null,
+        project_date || null,
+        client_name || null,
+        tags || null,
+        id
+      ]
+    );
+
+    res.json({
+      id,
+      name,
+      description,
+      project_name,
+      project_id,
+      project_date,
+      client_name,
+      tags,
+      updated_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error updating asset metadata:', error);
+    res.status(500).json({ 
+      error: 'Failed to update asset metadata',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

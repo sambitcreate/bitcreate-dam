@@ -320,6 +320,26 @@ app.get('/api/projects/:projectName/assets', async (req, res) => {
 });
 
 /**
+ * Fetch assets by project ID
+ */
+app.get('/api/projects/:projectId/assets', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const query = `
+      SELECT * FROM assets 
+      WHERE project_id = ? 
+      ORDER BY created_at DESC
+    `;
+    
+    const [rows] = await db.execute(query, [projectId]);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching project assets:', error);
+    res.status(500).json({ error: 'Failed to fetch project assets' });
+  }
+});
+
+/**
  * Create a new project
  */
 app.post('/api/projects', async (req, res) => {

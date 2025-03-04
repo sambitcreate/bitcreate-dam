@@ -112,6 +112,7 @@ button:focus-visible {
 }
 
 .react-datepicker-wrapper {
+  display: block;
   width: 100%;
 }
 
@@ -119,6 +120,20 @@ button:focus-visible {
   width: 100%;
 }
 
+/* Ensure date picker appears on top */
 .react-datepicker-popper {
-  z-index: 1001 !important;
+  z-index: 10001 !important;
+}
+
+/* Ensure modals appear centered and on top */
+.mantine-Modal-root {
+  z-index: 9999 !important;
+}
+
+.mantine-Modal-overlay {
+  z-index: 9998 !important;
+}
+
+.mantine-Modal-header {
+  z-index: 10000 !important;
 }

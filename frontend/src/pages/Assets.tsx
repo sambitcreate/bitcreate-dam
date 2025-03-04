@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Grid, Card, Text, Group, Button, Stack, Title, Alert } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
+import { Grid, Card, Text, Group, Button, Stack, Title, Alert, AspectRatio, Image, Menu, Checkbox, Slider, ActionIcon } from '@mantine/core';
+import { IconAlertCircle, IconDotsVertical, IconDownload, IconEdit, IconTrash, IconSortAscending } from '@tabler/icons-react';
 import { UploadModal } from '../components/UploadModal';
 import { AssetDetails } from '../components/AssetDetails';
+import { EditAssetModal } from '../components/EditAssetModal';
 
 interface Asset {
   id: string;
@@ -20,7 +21,11 @@ export function Assets() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [uploadModalOpened, setUploadModalOpened] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [editAssetModalOpened, setEditAssetModalOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageSize, setImageSize] = useState(50);
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     fetchAssets();
@@ -64,11 +69,120 @@ export function Assets() {
     }
   };
 
+  const handleDelete = async (assetId: string) => {
+    if (!confirm('Are you sure you want to delete this asset?')) return;
+    
+    try {
+      const response = await fetch(`http://localhost:3091/api/assets/${assetId}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Delete failed');
+      }
+
+      await fetchAssets();
+    } catch (error) {
+      console.error('Error deleting asset:', error);
+      alert('Failed to delete asset');
+    }
+  };
+
+  const handleDownload = (asset: Asset) => {
+    window.open(asset.jpg_url, '_blank');
+  };
+
+  const handleEditMetadata = (asset: Asset) => {
+    setSelectedAsset(asset);
+    setEditAssetModalOpened(true);
+  };
+
+  const sortedAssets = [...assets].sort((a, b) => {
+    let valueA = a[sortBy as keyof Asset] || '';
+    let valueB = b[sortBy as keyof Asset] || '';
+    
+    if (sortBy === 'created_at' || sortBy === 'project_date') {
+      valueA = new Date(valueA as string).getTime().toString();
+      valueB = new Date(valueB as string).getTime().toString();
+    }
+    
+    return sortOrder === 'asc' 
+      ? valueA.localeCompare(valueB as string) 
+      : valueB.localeCompare(valueA as string);
+  });
+
+  const calculateSpan = () => {
+    if (imageSize < 30) return { base: 12, sm: 6, md: 3, lg: 2 };
+    if (imageSize < 60) return { base: 12, sm: 6, md: 4, lg: 3 };
+    if (imageSize < 80) return { base: 12, sm: 6, md: 6, lg: 4 };
+    return { base: 12, sm: 12, md: 6, lg: 6 };
+  };
+
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="center">
         <Title order={2}>Assets</Title>
-        <Button onClick={() => setUploadModalOpened(true)}>Add New</Button>
+        <Group>
+          <Menu shadow="md" width={200}>
+            <Menu.Target>
+              <Button leftSection={<IconSortAscending size={16} />} variant="light">
+                Sort By
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Sort Field</Menu.Label>
+              <Menu.Item 
+                onClick={() => setSortBy('name')}
+                rightSection={sortBy === 'name' ? <Checkbox checked readOnly /> : null}
+              >
+                Name
+              </Menu.Item>
+              <Menu.Item 
+                onClick={() => setSortBy('project_name')}
+                rightSection={sortBy === 'project_name' ? <Checkbox checked readOnly /> : null}
+              >
+                Project
+              </Menu.Item>
+              <Menu.Item 
+                onClick={() => setSortBy('project_date')}
+                rightSection={sortBy === 'project_date' ? <Checkbox checked readOnly /> : null}
+              >
+                Project Date
+              </Menu.Item>
+              <Menu.Item 
+                onClick={() => setSortBy('created_at')}
+                rightSection={sortBy === 'created_at' ? <Checkbox checked readOnly /> : null}
+              >
+                Upload Date
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Label>Order</Menu.Label>
+              <Menu.Item 
+                onClick={() => setSortOrder('asc')}
+                rightSection={sortOrder === 'asc' ? <Checkbox checked readOnly /> : null}
+              >
+                Ascending
+              </Menu.Item>
+              <Menu.Item 
+                onClick={() => setSortOrder('desc')}
+                rightSection={sortOrder === 'desc' ? <Checkbox checked readOnly /> : null}
+              >
+                Descending
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+          <Group>
+            <Text size="sm">Zoom:</Text>
+            <Slider
+              value={imageSize}
+              onChange={setImageSize}
+              min={20}
+              max={100}
+              style={{ width: 100 }}
+            />
+          </Group>
+          <Button onClick={() => setUploadModalOpened(true)}>Add New</Button>
+        </Group>
       </Group>
 
       {error && (
@@ -78,21 +192,69 @@ export function Assets() {
       )}
 
       <Grid>
-        {Array.isArray(assets) && assets.map((asset) => (
-          <Grid.Col key={asset.id} span={{ base: 12, sm: 6, md: 4, lg: 3 }}>
+        {Array.isArray(sortedAssets) && sortedAssets.map((asset) => (
+          <Grid.Col key={asset.id} span={calculateSpan()}>
             <Card 
               shadow="sm" 
-              style={{ cursor: 'pointer' }}
-              onClick={() => setSelectedAsset(asset)}
+              padding="lg"
+              radius="md"
+              withBorder
+              style={{ position: 'relative' }}
             >
-              <Card.Section>
-                <img
-                  src={asset.jpg_url}
-                  alt={asset.name}
-                  style={{ width: '100%', height: '200px', objectFit: 'cover' }}
-                />
+              <ActionIcon 
+                style={{ position: 'absolute', top: 5, right: 5, zIndex: 10 }}
+                variant="light"
+                color="gray"
+              >
+                <Menu shadow="md" width={200} position="bottom-end">
+                  <Menu.Target>
+                    <ActionIcon>
+                      <IconDotsVertical size={16} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item 
+                      leftSection={<IconEdit size={14} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditMetadata(asset);
+                      }}
+                    >
+                      Edit Metadata
+                    </Menu.Item>
+                    <Menu.Item 
+                      leftSection={<IconDownload size={14} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownload(asset);
+                      }}
+                    >
+                      Download
+                    </Menu.Item>
+                    <Menu.Item 
+                      leftSection={<IconTrash size={14} />}
+                      color="red"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(asset.id);
+                      }}
+                    >
+                      Delete
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              </ActionIcon>
+              <Card.Section onClick={() => setSelectedAsset(asset)} style={{ cursor: 'pointer' }}>
+                <AspectRatio ratio={1}>
+                  <Image
+                    src={asset.jpg_url}
+                    alt={asset.name}
+                    fit="cover"
+                    fallbackSrc="https://placehold.co/600x400?text=Image+Not+Found"
+                  />
+                </AspectRatio>
               </Card.Section>
-              <Text fw={500} size="lg" mt="md">
+              <Text fw={500} size="lg" mt="md" lineClamp={1}>
                 {asset.name}
               </Text>
               <Text size="sm" c="dimmed">
@@ -117,6 +279,13 @@ export function Assets() {
       <AssetDetails
         asset={selectedAsset}
         onClose={() => setSelectedAsset(null)}
+      />
+
+      <EditAssetModal
+        asset={selectedAsset}
+        opened={editAssetModalOpened}
+        onClose={() => setEditAssetModalOpened(false)}
+        onUpdate={fetchAssets}
       />
     </Stack>
   );

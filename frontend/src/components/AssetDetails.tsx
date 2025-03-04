@@ -27,10 +27,17 @@ export function AssetDetails({ asset, onClose }: AssetDetailsProps) {
       size="xl"
       title={asset.name}
       styles={{
-        root: { zIndex: 1000 },
-        overlay: { zIndex: 999 },
-        body: { backgroundColor: 'white' }
+        root: { zIndex: 9999 },
+        overlay: { zIndex: 9998, backdropFilter: 'blur(3px)' },
+        body: { backgroundColor: 'transparent' },
+        content: { maxWidth: '90vw', position: 'relative' },
+        inner: { padding: '20px' },
+        header: { zIndex: 10000 }
       }}
+      centered
+      fullScreen={false}
+      overlayProps={{ blur: 3 }}
+      transitionProps={{ duration: 200 }}
     >
       <Group align="flex-start" grow>
         <div style={{ flex: 2 }}>
@@ -38,7 +45,7 @@ export function AssetDetails({ asset, onClose }: AssetDetailsProps) {
             src={asset.jpg_url}
             alt={asset.name}
             fit="contain"
-            style={{ maxHeight: '70vh', width: '100%', backgroundColor: 'white' }}
+            style={{ maxHeight: '70vh', width: '100%' }}
           />
         </div>
         <Stack style={{ flex: 1 }}>

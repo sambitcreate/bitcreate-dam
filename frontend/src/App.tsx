@@ -27,11 +27,18 @@ function App() {
         <Router>
           <AppShell
             navbar={{ width: 300, breakpoint: 'sm' }}
+            header={{ height: 60 }}
             padding="md"
             styles={{
               main: {
                 background: '#f8f9fa',
               },
+              header: {
+                backgroundColor: 'white',
+                borderBottom: '1px solid #e9ecef',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                zIndex: 100
+              }
             }}
           >
             <AppShell.Navbar p="xs">
