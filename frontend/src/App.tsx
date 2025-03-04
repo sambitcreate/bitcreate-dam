@@ -1,15 +1,11 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Navigation from './components/Navigation';
-import Assets from './Assets';
-import Dashboard from './pages/Dashboard';
-import { MantineProvider, createTheme, AppShell } from '@mantine/core';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { AppShell, NavLink, MantineProvider } from '@mantine/core';
 import '@mantine/core/styles.css';
-
-const theme = createTheme({
-  primaryColor: 'blue',
-  defaultRadius: 'sm',
-});
+import { IconHome, IconPhoto, IconFolder } from '@tabler/icons-react';
+import Dashboard from './pages/Dashboard';
+import { Assets } from './pages/Assets';
+import { Projects } from './pages/Projects';
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -43,41 +39,67 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-const App: React.FC = () => {
-  const [mobileOpened, setMobileOpened] = useState(false);
+function Navigation() {
+  const location = useLocation();
 
   return (
+    <>
+      <NavLink
+        label="Dashboard"
+        leftSection={<IconHome size="1rem" />}
+        component={Link}
+        to="/"
+        active={location.pathname === '/'}
+      />
+      <NavLink
+        label="Assets"
+        leftSection={<IconPhoto size="1rem" />}
+        component={Link}
+        to="/assets"
+        active={location.pathname === '/assets'}
+      />
+      <NavLink
+        label="Projects"
+        leftSection={<IconFolder size="1rem" />}
+        component={Link}
+        to="/projects"
+        active={location.pathname === '/projects'}
+      />
+    </>
+  );
+}
+
+function App() {
+  return (
     <ErrorBoundary>
-      <MantineProvider theme={theme}>
+      <MantineProvider>
         <Router>
           <AppShell
-            header={{ height: 60 }}
-            navbar={{
-              width: 300,
-              breakpoint: 'sm',
-              collapsed: { mobile: !mobileOpened },
-            }}
+            navbar={{ width: 300, breakpoint: 'sm' }}
             padding="md"
+            styles={{
+              main: {
+                background: '#f8f9fa',
+              },
+            }}
           >
-            <AppShell.Header p="md">
-              <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Jewelry DAM</h1>
-              </div>
-            </AppShell.Header>
-
-            <Navigation mobileOpened={mobileOpened} onMobileOpenedChange={setMobileOpened} />
-
+            <AppShell.Navbar p="xs">
+              <Navigation />
+            </AppShell.Navbar>
             <AppShell.Main>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/assets" element={<Assets />} />
-              </Routes>
+              <div style={{ minHeight: '100vh', width: '100%' }}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/assets" element={<Assets />} />
+                  <Route path="/projects" element={<Projects />} />
+                </Routes>
+              </div>
             </AppShell.Main>
           </AppShell>
         </Router>
       </MantineProvider>
     </ErrorBoundary>
   );
-};
+}
 
 export default App;

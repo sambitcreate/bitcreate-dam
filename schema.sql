@@ -1,9 +1,12 @@
 -- Create or update the assets table
 CREATE TABLE IF NOT EXISTS assets (
-  id VARCHAR(36) PRIMARY KEY,
+  id VARCHAR(36) NOT NULL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   description TEXT,
   tags TEXT,
+  project_name VARCHAR(255),
+  project_date DATE,
+  client_name VARCHAR(255),
   jpg_url VARCHAR(255),
   tiff_url VARCHAR(255),
   file_url VARCHAR(255),

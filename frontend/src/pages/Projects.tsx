@@ -2,30 +2,27 @@ import { useState, useEffect } from 'react';
 import { Grid, Card, Text, Group, Button, Stack, Title } from '@mantine/core';
 import { UploadModal } from '../components/UploadModal';
 
-interface Asset {
-  id: string;
-  name: string;
-  description: string;
-  jpg_url: string;
-  project_name: string;
-  created_at: string;
+interface Project {
+  projectName: string;
+  latestImage: string;
+  uploadDates: string[];
 }
 
-export function Assets() {
-  const [assets, setAssets] = useState<Asset[]>([]);
+export function Projects() {
+  const [projects, setProjects] = useState<Project[]>([]);
   const [uploadModalOpened, setUploadModalOpened] = useState(false);
 
   useEffect(() => {
-    fetchAssets();
+    fetchProjects();
   }, []);
 
-  const fetchAssets = async () => {
+  const fetchProjects = async () => {
     try {
-      const response = await fetch('http://localhost:3091/api/assets');
+      const response = await fetch('http://localhost:3091/api/projects');
       const data = await response.json();
-      setAssets(data);
+      setProjects(data);
     } catch (error) {
-      console.error('Error fetching assets:', error);
+      console.error('Error fetching projects:', error);
     }
   };
 
@@ -40,7 +37,7 @@ export function Assets() {
         throw new Error('Upload failed');
       }
 
-      await fetchAssets(); // Refresh assets after upload
+      await fetchProjects(); // Refresh projects after upload
     } catch (error) {
       console.error('Error uploading:', error);
       throw error;
@@ -50,32 +47,27 @@ export function Assets() {
   return (
     <Stack gap="xl">
       <Group justify="space-between" align="center">
-        <Title order={2}>Assets</Title>
+        <Title order={2}>Projects</Title>
         <Button onClick={() => setUploadModalOpened(true)}>Add New</Button>
       </Group>
 
       <Grid>
-        {assets.map((asset) => (
-          <Grid.Col key={asset.id} span={{ base: 12, sm: 6, md: 4, lg: 3 }}>
+        {projects.map((project, index) => (
+          <Grid.Col key={index} span={{ base: 12, sm: 6, md: 4, lg: 3 }}>
             <Card shadow="sm">
               <Card.Section>
                 <img
-                  src={asset.jpg_url}
-                  alt={asset.name}
+                  src={project.latestImage}
+                  alt={project.projectName}
                   style={{ width: '100%', height: '200px', objectFit: 'cover' }}
                 />
               </Card.Section>
               <Text fw={500} size="lg" mt="md">
-                {asset.name}
+                {project.projectName}
               </Text>
               <Text size="sm" c="dimmed">
-                {new Date(asset.created_at).toLocaleDateString()}
+                {project.uploadDates.length} uploads
               </Text>
-              {asset.project_name && (
-                <Text size="sm" c="dimmed">
-                  Project: {asset.project_name}
-                </Text>
-              )}
             </Card>
           </Grid.Col>
         ))}

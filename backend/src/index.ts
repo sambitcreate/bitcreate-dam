@@ -75,69 +75,140 @@ app.get('/api/assets', async (req, res) => {
  */
 app.post(
   '/api/assets',
-  upload.fields([
-    { name: 'jpg', maxCount: 1 },
-    { name: 'tiff', maxCount: 1 },
-  ]),
+  upload.array('images'),
   async (req, res) => {
     try {
-      const { name, description, tags } = req.body;
-      const jpgFile = req.files && (req.files as any)['jpg'] ? (req.files as any)['jpg'][0] : null;
-      const tiffFile = req.files && (req.files as any)['tiff'] ? (req.files as any)['tiff'][0] : null;
+      const { projectName, projectDate, clientId } = req.body;
+      const files = req.files as Express.Multer.File[];
 
       // Validate required fields
-      if (!name || !jpgFile) {
-        return res.status(400).json({ error: 'Name and JPG file are required' });
+      if (!projectName || !files || files.length === 0) {
+        return res.status(400).json({ error: 'Project name and at least one image are required' });
       }
 
-      const assetId = uuidv4();
-      let jpgUrl = null;
-      let tiffUrl = null;
+      const results = [];
 
-      // Upload JPG to MinIO
-      try {
-        await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, jpgFile.path, {
-          'Content-Type': 'image/jpeg',
-        });
-        jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
-      } catch (minioError) {
-        console.error('Error uploading JPG to MinIO:', minioError);
-        return res.status(500).json({ error: 'Failed to upload JPG to MinIO' });
-      }
+      // Process each uploaded file
+      for (const file of files) {
+        const assetId = uuidv4();
+        let jpgUrl = null;
 
-      // Upload TIFF to MinIO (if provided)
-      if (tiffFile) {
+        // Upload JPG to MinIO
         try {
-          await minioClient.fPutObject('jewelrydam', `assets/${assetId}.tiff`, tiffFile.path, {
-            'Content-Type': 'image/tiff',
+          await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, file.path, {
+            'Content-Type': 'image/jpeg',
           });
-          tiffUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.tiff`;
+          jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
         } catch (minioError) {
-          console.error('Error uploading TIFF to MinIO:', minioError);
-          return res.status(500).json({ error: 'Failed to upload TIFF to MinIO' });
+          console.error('Error uploading JPG to MinIO:', minioError);
+          return res.status(500).json({ error: 'Failed to upload image to MinIO' });
         }
+
+        // Insert asset metadata into the database
+        const query = `
+          INSERT INTO assets (id, name, description, tags, jpg_url, project_name, project_date, client_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        await db.execute(query, [
+          assetId,
+          file.originalname,
+          '',
+          '',
+          jpgUrl,
+          projectName,
+          new Date(projectDate),
+          clientId
+        ]);
+
+        // Clean up uploaded file
+        fs.unlinkSync(file.path);
+
+        results.push({
+          assetId,
+          name: file.originalname,
+          jpgUrl,
+          projectName,
+          projectDate,
+          clientName: clientId
+        });
       }
 
-      // Insert asset metadata into the database
-      const query = `
-        INSERT INTO assets (id, name, description, tags, jpg_url, tiff_url)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `;
-      await db.execute(query, [assetId, name, description, tags ? tags : null, jpgUrl, tiffUrl]);
-
-      // Clean up uploaded files
-      fs.unlinkSync(jpgFile.path);
-      if (tiffFile) {
-        fs.unlinkSync(tiffFile.path);
-      }
-
-      res.status(201).json({ message: 'Asset created successfully', assetId });
+      res.status(201).json({ message: 'Assets created successfully', assets: results });
     } catch (error) {
-      console.error('Error creating asset:', error);
-      res.status(500).json({ error: 'Failed to create asset' });
+      console.error('Error creating assets:', error);
+      res.status(500).json({ error: 'Failed to create assets' });
     }
   }
 );
+
+/**
+ * Fetch recent assets
+ */
+app.get('/api/assets/recent', async (req, res) => {
+  try {
+    const [rows] = await db.execute('SELECT * FROM assets ORDER BY created_at DESC LIMIT 10');
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching recent assets:', error);
+    res.status(500).json({ error: 'Failed to fetch recent assets' });
+  }
+});
+
+/**
+ * Fetch all projects with their latest images
+ */
+app.get('/api/projects', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        a1.project_name,
+        a1.jpg_url as latestImage,
+        GROUP_CONCAT(DISTINCT DATE(a2.created_at)) as uploadDates
+      FROM assets a1
+      INNER JOIN (
+        SELECT project_name, MAX(created_at) as max_created_at
+        FROM assets
+        GROUP BY project_name
+      ) latest ON a1.project_name = latest.project_name 
+        AND a1.created_at = latest.max_created_at
+      LEFT JOIN assets a2 ON a1.project_name = a2.project_name
+      GROUP BY a1.project_name, a1.jpg_url
+      ORDER BY a1.created_at DESC
+    `;
+    
+    const [rows] = await db.execute(query);
+    const projects = (rows as any[]).map(row => ({
+      projectName: row.project_name,
+      latestImage: row.latestImage,
+      uploadDates: row.uploadDates ? row.uploadDates.split(',') : []
+    }));
+    
+    res.json(projects);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ error: 'Failed to fetch projects' });
+  }
+});
+
+/**
+ * Fetch assets by project name
+ */
+app.get('/api/projects/:projectName/assets', async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    const query = `
+      SELECT * FROM assets 
+      WHERE project_name = ? 
+      ORDER BY created_at DESC
+    `;
+    
+    const [rows] = await db.execute(query, [projectName]);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching project assets:', error);
+    res.status(500).json({ error: 'Failed to fetch project assets' });
+  }
+});
 
 // Start the server
 app.listen(port, () => {

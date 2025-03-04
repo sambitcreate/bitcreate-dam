@@ -46,6 +46,33 @@ async function testConnection(retries = 5) {
       `);
       console.log('Upload logs table created or verified');
 
+      // Update the assets table schema
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS assets (
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          project_name VARCHAR(255),
+          project_date DATE,
+          client_name VARCHAR(255),
+          tags TEXT,
+          jpg_url VARCHAR(255),
+          tiff_url VARCHAR(255),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('Assets table created or verified');
+
+      // Create clients table
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS clients (
+          id VARCHAR(36) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('Clients table created or verified');
+
       connection.release(); // Release the connection back to the pool
       return; // Exit the function if the connection is successful
     } catch (error) {
@@ -110,107 +137,143 @@ app.get('/api/uploads/log', async (req, res) => {
   }
 });
 
-app.post('/api/assets', upload.fields([{ name: 'jpg', maxCount: 1 }, { name: 'tiff', maxCount: 1 }]), async (req, res) => {
+interface UploadResult {
+  id: string;
+  name: string;
+  url: string;
+}
+
+app.post('/api/assets', upload.array('images'), async (req, res) => {
   try {
-    const { name, description, tags } = req.body;
-    const jpgFile = req.files && (req.files as any)['jpg'] ? (req.files as any)['jpg'][0] : null;
-    const tiffFile = req.files && (req.files as any)['tiff'] ? (req.files as any)['tiff'][0] : null;
+    const { projectName, projectDate, clientId } = req.body;
+    const files = req.files as Express.Multer.File[];
 
-    if (!name || !jpgFile) {
-      return res.status(400).json({ error: 'Name and JPG file are required' });
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'At least one image file is required' });
     }
 
-    const assetId = uuidv4();
-    let jpgUrl: string | null = null;
-    let tiffUrl: string | null = null;
+    const results: UploadResult[] = [];
+    for (const file of files) {
+      const assetId = uuidv4();
+      let jpgUrl: string | null = null;
 
-    // Log the start of the upload
-    const startLogId = uuidv4();
-    await pool.execute(
-      'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-      [startLogId, `Starting upload for asset: ${name}`, assetId, 'started']
-    );
-
-    // Upload JPG to MinIO
-    try {
-      await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, jpgFile.path, {
-        'Content-Type': 'image/jpeg',
-      });
-      jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
-      
-      // Log successful JPG upload
+      // Log the start of the upload
+      const startLogId = uuidv4();
       await pool.execute(
         'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-        [uuidv4(), `Successfully uploaded JPG for asset: ${name}`, assetId, 'jpg_uploaded']
+        [startLogId, `Starting upload for file: ${file.originalname}`, assetId, 'started']
       );
-    } catch (minioError: any) {
-      console.error('Error uploading JPG to MinIO:', minioError);
-      
-      // Log JPG upload failure
-      await pool.execute(
-        'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-        [uuidv4(), `Failed to upload JPG for asset: ${name} - ${minioError.message}`, assetId, 'jpg_failed']
-      );
-      
-      return res.status(500).json({ error: 'Failed to upload JPG to MinIO' });
-    }
 
-    // Upload TIFF to MinIO (if provided)
-    if (tiffFile) {
       try {
-        await minioClient.fPutObject('jewelrydam', `assets/${assetId}.tiff`, tiffFile.path, {
-          'Content-Type': 'image/tiff',
+        // Upload JPG to MinIO
+        await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, file.path, {
+          'Content-Type': file.mimetype,
         });
-        tiffUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.tiff`;
+        jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
         
-        // Log successful TIFF upload
+        // Log successful upload
         await pool.execute(
           'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-          [uuidv4(), `Successfully uploaded TIFF for asset: ${name}`, assetId, 'tiff_uploaded']
+          [uuidv4(), `Successfully uploaded file: ${file.originalname}`, assetId, 'completed']
         );
-      } catch (minioError: any) {
-        console.error('Error uploading TIFF to MinIO:', minioError);
+
+        // Insert asset metadata into the database
+        const query = `
+          INSERT INTO assets (id, name, project_name, project_date, client_name, jpg_url)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `;
+        await pool.execute(query, [
+          assetId,
+          file.originalname,
+          projectName,
+          projectDate,
+          clientId,
+          jpgUrl
+        ]);
+
+        results.push({
+          id: assetId,
+          name: file.originalname,
+          url: jpgUrl
+        });
+
+        // Clean up uploaded file
+        fs.unlinkSync(file.path);
+      } catch (error: any) {
+        console.error('Error processing file:', error);
         
-        // Log TIFF upload failure
+        // Log the error
         await pool.execute(
           'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-          [uuidv4(), `Failed to upload TIFF for asset: ${name} - ${minioError.message}`, assetId, 'tiff_failed']
+          [uuidv4(), `Error processing file ${file.originalname}: ${error.message}`, assetId, 'error']
         );
         
-        return res.status(500).json({ error: 'Failed to upload TIFF to MinIO' });
+        throw error;
       }
     }
 
-    // Insert asset metadata into the database
-    const query = `
-      INSERT INTO assets (id, name, description, tags, jpg_url, tiff_url)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    await pool.execute(query, [assetId, name, description, tags ? tags : null, jpgUrl, tiffUrl]);
+    res.status(201).json({ message: 'Assets created successfully', assets: results });
+  } catch (error: any) {
+    console.error('Error creating assets:', error);
+    res.status(500).json({ error: 'Failed to create assets' });
+  }
+});
 
-    // Log successful asset creation
-    await pool.execute(
-      'INSERT INTO upload_logs (id, message, asset_id, status) VALUES (?, ?, ?, ?)',
-      [uuidv4(), `Asset created successfully: ${name}`, assetId, 'completed']
-    );
+// Add endpoint to get clients
+app.get('/api/clients', async (req, res) => {
+  try {
+    const [rows] = await pool.execute('SELECT * FROM clients ORDER BY name');
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ error: 'Failed to fetch clients' });
+  }
+});
 
-    // Clean up uploaded files
-    fs.unlinkSync(jpgFile.path);
-    if (tiffFile) {
-      fs.unlinkSync(tiffFile.path);
+// Add endpoint to create a new client
+app.post('/api/clients', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Client name is required' });
     }
 
-    res.status(201).json({ message: 'Asset created successfully', assetId });
-  } catch (error: any) {
-    console.error('Error creating asset:', error);
-    
-    // Log the error
+    const clientId = uuidv4();
     await pool.execute(
-      'INSERT INTO upload_logs (id, message, status) VALUES (?, ?, ?)',
-      [uuidv4(), `Error creating asset: ${error.message}`, 'error']
+      'INSERT INTO clients (id, name) VALUES (?, ?)',
+      [clientId, name]
     );
-    
-    res.status(500).json({ error: 'Failed to create asset' });
+
+    res.status(201).json({ id: clientId, name });
+  } catch (error) {
+    console.error('Error creating client:', error);
+    res.status(500).json({ error: 'Failed to create client' });
+  }
+});
+
+// Add search endpoint
+app.get('/api/assets/search', async (req, res) => {
+  try {
+    const query = req.query.q as string;
+    if (!query) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const searchTerm = `%${query}%`;
+    const [rows] = await pool.execute(
+      `SELECT * FROM assets 
+       WHERE name LIKE ? 
+       OR description LIKE ? 
+       OR project_name LIKE ? 
+       OR client_name LIKE ?
+       ORDER BY created_at DESC`,
+      [searchTerm, searchTerm, searchTerm, searchTerm]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error searching assets:', error);
+    res.status(500).json({ error: 'Failed to search assets' });
   }
 });
 
