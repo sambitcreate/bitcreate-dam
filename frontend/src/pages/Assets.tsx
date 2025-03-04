@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Table,
   Button,
@@ -8,32 +8,54 @@ import {
   Textarea,
   FileInput,
   Badge,
+  Text,
 } from '@mantine/core';
 import axios from 'axios';
 
-const Assets = () => {
-  const [assets, setAssets] = useState([]);
+const Assets: React.FC = () => {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [filteredAssets, setFilteredAssets] = useState<any[]>([]);
   const [opened, setOpened] = useState(false);
   const [newAssetName, setNewAssetName] = useState('');
   const [newAssetDescription, setNewAssetDescription] = useState('');
   const [newAssetTags, setNewAssetTags] = useState('');
   const [newAssetJpg, setNewAssetJpg] = useState<File | null>(null);
   const [newAssetTiff, setNewAssetTiff] = useState<File | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchAssets();
   }, []);
 
+  useEffect(() => {
+    filterAssets();
+  }, [searchQuery, assets]);
+
   const fetchAssets = async () => {
     try {
       const response = await axios.get('http://localhost:3091/api/assets');
       setAssets(response.data);
+      setFilteredAssets(response.data);
     } catch (error) {
       console.error('Error fetching assets:', error);
+      setError('Failed to fetch assets. Please try again later.');
     }
   };
 
+  const filterAssets = () => {
+    const filtered = assets.filter((asset) =>
+      asset.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredAssets(filtered);
+  };
+
   const handleCreateAsset = async () => {
+    if (!newAssetName || !newAssetDescription || !newAssetJpg) {
+      setError('Name, description, and JPG file are required.');
+      return;
+    }
+
     try {
       const formData = new FormData();
       formData.append('name', newAssetName);
@@ -58,11 +80,13 @@ const Assets = () => {
         setNewAssetTags('');
         setNewAssetJpg(null);
         setNewAssetTiff(null);
+        setError('');
       } else {
-        console.error('Failed to create asset');
+        setError('Failed to create asset. Please try again.');
       }
     } catch (error) {
       console.error('Error creating asset:', error);
+      setError('An error occurred while creating the asset.');
     }
   };
 
@@ -71,14 +95,20 @@ const Assets = () => {
       <Group position="apart" mb="md">
         <TextInput
           placeholder="Search assets..."
-          onChange={() => {
-            // Implement search
-          }}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.currentTarget.value)}
+          style={{ flex: 1 }}
         />
         <Button onClick={() => setOpened(true)}>Create New Asset</Button>
       </Group>
 
-      <Table>
+      {error && (
+        <Text color="red" mb="md">
+          {error}
+        </Text>
+      )}
+
+      <Table striped highlightOnHover>
         <thead>
           <tr>
             <th>Name</th>
@@ -88,19 +118,22 @@ const Assets = () => {
           </tr>
         </thead>
         <tbody>
-          {assets.map((asset: any) => (
+          {filteredAssets.map((asset) => (
             <tr key={asset.id}>
               <td>{asset.name}</td>
               <td>
-                <Group spacing="xs">
-                  {asset.tags && JSON.parse(asset.tags).map((tag: string) => (
-                    <Badge key={tag}>{tag}</Badge>
-                  ))}
+                <Group spacing="sm">
+                  {asset.tags &&
+                    JSON.parse(asset.tags).map((tag: string) => (
+                      <Badge key={tag} color="blue">
+                        {tag}
+                      </Badge>
+                    ))}
                 </Group>
               </td>
               <td>{new Date(asset.created_at).toLocaleString()}</td>
               <td>
-                <Button onClick={() => {/* Handle action */}}>
+                <Button onClick={() => alert('Send via WeTransfer')}>
                   Send via WeTransfer
                 </Button>
               </td>
@@ -115,30 +148,40 @@ const Assets = () => {
           placeholder="Asset Name"
           value={newAssetName}
           onChange={(event) => setNewAssetName(event.currentTarget.value)}
+          required
+          mb="md"
         />
         <Textarea
           label="Description"
           placeholder="Asset Description"
           value={newAssetDescription}
           onChange={(event) => setNewAssetDescription(event.currentTarget.value)}
+          required
+          mb="md"
         />
         <TextInput
           label="Tags"
           placeholder="Comma-separated tags"
           value={newAssetTags}
           onChange={(event) => setNewAssetTags(event.currentTarget.value)}
+          mb="md"
         />
         <FileInput
           label="JPG File"
           accept="image/jpeg"
           onChange={(file) => setNewAssetJpg(file)}
+          required
+          mb="md"
         />
         <FileInput
           label="TIFF File (Optional)"
           accept="image/tiff"
           onChange={(file) => setNewAssetTiff(file)}
+          mb="md"
         />
-        <Button onClick={handleCreateAsset}>Create Asset</Button>
+        <Button onClick={handleCreateAsset} fullWidth>
+          Create Asset
+        </Button>
       </Modal>
     </div>
   );

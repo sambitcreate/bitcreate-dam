@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es2022", // Set to "es2017" or higher
+    "module": "esnext", // Set to "es2022", "esnext", "node16", "node18", or "nodenext"
+    "moduleResolution": "node", // Required for Node.js projects
+    "outDir": "./dist", // Output directory for compiled files
+    "rootDir": "./src", // Root directory of your TypeScript files
+    "strict": true, // Enable strict type-checking
+    "esModuleInterop": true, // Enable ES module interop
+    "skipLibCheck": true, // Skip library checking
+    "forceConsistentCasingInFileNames": true // Ensure consistent file naming
+  },
+  "include": ["src/**/*"], // Include all files in the src directory
+  "exclude": ["node_modules"] // Exclude node_modules
+}

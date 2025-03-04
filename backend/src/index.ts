@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs';
 
+// Initialize Express app
 const app = express();
 const port = 3091;
 
@@ -51,10 +52,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 // API Endpoints
+
+/**
+ * Fetch all assets
+ */
 app.get('/api/assets', async (req, res) => {
   try {
     const [rows] = await db.execute('SELECT * FROM assets');
@@ -65,64 +70,76 @@ app.get('/api/assets', async (req, res) => {
   }
 });
 
-app.post('/api/assets', upload.fields([{ name: 'jpg', maxCount: 1 }, { name: 'tiff', maxCount: 1 }]), async (req, res) => {
-  try {
-    const { name, description, tags } = req.body;
-    const jpgFile = req.files && (req.files as any)['jpg'] ? (req.files as any)['jpg'][0] : null;
-    const tiffFile = req.files && (req.files as any)['tiff'] ? (req.files as any)['tiff'][0] : null;
-
-    if (!name || !jpgFile) {
-      return res.status(400).json({ error: 'Name and JPG file are required' });
-    }
-
-    const assetId = uuidv4();
-    let jpgUrl = null;
-    let tiffUrl = null;
-
-    // Upload JPG to MinIO
+/**
+ * Create a new asset
+ */
+app.post(
+  '/api/assets',
+  upload.fields([
+    { name: 'jpg', maxCount: 1 },
+    { name: 'tiff', maxCount: 1 },
+  ]),
+  async (req, res) => {
     try {
-      await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, jpgFile.path, {
-        'Content-Type': 'image/jpeg',
-      });
-      jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
-    } catch (minioError) {
-      console.error('Error uploading JPG to MinIO:', minioError);
-      return res.status(500).json({ error: 'Failed to upload JPG to MinIO' });
-    }
+      const { name, description, tags } = req.body;
+      const jpgFile = req.files && (req.files as any)['jpg'] ? (req.files as any)['jpg'][0] : null;
+      const tiffFile = req.files && (req.files as any)['tiff'] ? (req.files as any)['tiff'][0] : null;
 
-    // Upload TIFF to MinIO (if provided)
-    if (tiffFile) {
-      try {
-        await minioClient.fPutObject('jewelrydam', `assets/${assetId}.tiff`, tiffFile.path, {
-          'Content-Type': 'image/tiff',
-        });
-        tiffUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.tiff`;
-      } catch (minioError) {
-        console.error('Error uploading TIFF to MinIO:', minioError);
-        return res.status(500).json({ error: 'Failed to upload TIFF to MinIO' });
+      // Validate required fields
+      if (!name || !jpgFile) {
+        return res.status(400).json({ error: 'Name and JPG file are required' });
       }
+
+      const assetId = uuidv4();
+      let jpgUrl = null;
+      let tiffUrl = null;
+
+      // Upload JPG to MinIO
+      try {
+        await minioClient.fPutObject('jewelrydam', `assets/${assetId}.jpg`, jpgFile.path, {
+          'Content-Type': 'image/jpeg',
+        });
+        jpgUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.jpg`;
+      } catch (minioError) {
+        console.error('Error uploading JPG to MinIO:', minioError);
+        return res.status(500).json({ error: 'Failed to upload JPG to MinIO' });
+      }
+
+      // Upload TIFF to MinIO (if provided)
+      if (tiffFile) {
+        try {
+          await minioClient.fPutObject('jewelrydam', `assets/${assetId}.tiff`, tiffFile.path, {
+            'Content-Type': 'image/tiff',
+          });
+          tiffUrl = `http://localhost:9000/jewelrydam/assets/${assetId}.tiff`;
+        } catch (minioError) {
+          console.error('Error uploading TIFF to MinIO:', minioError);
+          return res.status(500).json({ error: 'Failed to upload TIFF to MinIO' });
+        }
+      }
+
+      // Insert asset metadata into the database
+      const query = `
+        INSERT INTO assets (id, name, description, tags, jpg_url, tiff_url)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+      await db.execute(query, [assetId, name, description, tags ? tags : null, jpgUrl, tiffUrl]);
+
+      // Clean up uploaded files
+      fs.unlinkSync(jpgFile.path);
+      if (tiffFile) {
+        fs.unlinkSync(tiffFile.path);
+      }
+
+      res.status(201).json({ message: 'Asset created successfully', assetId });
+    } catch (error) {
+      console.error('Error creating asset:', error);
+      res.status(500).json({ error: 'Failed to create asset' });
     }
-
-    // Insert asset metadata into the database
-    const query = `
-      INSERT INTO assets (id, name, description, tags, jpg_url, tiff_url)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    await db.execute(query, [assetId, name, description, tags ? tags : null, jpgUrl, tiffUrl]);
-
-    // Clean up uploaded files
-    fs.unlinkSync(jpgFile.path);
-    if (tiffFile) {
-      fs.unlinkSync(tiffFile.path);
-    }
-
-    res.status(201).json({ message: 'Asset created successfully', assetId });
-  } catch (error) {
-    console.error('Error creating asset:', error);
-    res.status(500).json({ error: 'Failed to create asset' });
   }
-});
+);
 
+// Start the server
 app.listen(port, () => {
   console.log(`Backend running on port ${port}`);
 });
